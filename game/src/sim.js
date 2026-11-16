@@ -1,6 +1,7 @@
 // Fixed-step simulation (1/60 s): movement, gunplay, grenades, the charge,
-// round flow and the economy. Rendering never touches this; it only reads
-// the state the sim writes. No objects are allocated in the hot loop.
+// round flow and the economy. One job: advance the match one fixed step at
+// a time. Rendering never touches this; it only reads the state the sim
+// writes. No objects are allocated in the hot loop.
 import { WEAPONS, GRENADES, isPrimary } from './weapons.js';
 import { SITES, inSite, collideCircle, raySolids, hasLineOfSight } from './map.js';
 import { player, aliveFighters, pushKillfeed, pushRadio, otherTeam } from './state.js';

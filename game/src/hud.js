@@ -45,10 +45,11 @@ export function buildBuyMenu(state) {
       const owned = item.id in (p.owned || {}) || (item.id === 'vest' && p.armour >= 50 && !p.helmet) || (item.id === 'vesthelm' && p.helmet) || (item.id === 'defuse' && p.hasDefuseKit);
       const teamLocked = item.team && item.team !== p.team;
       const afford = p.cash >= item.price;
+      const tooExp = !owned && !afford && !teamLocked;
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'buy-item' + (owned ? ' owned' : '') + ((!afford || teamLocked) && !owned ? ' poor' : '');
-      card.innerHTML = `<b>${item.name}</b><span class="price">${owned ? 'Owned' : '$' + item.price}</span><span class="blurb">${teamLocked ? item.team + ' only' : item.blurb}</span>`;
+      card.innerHTML = `<b>${item.name}</b><span class="price">${owned ? 'Owned' : '$' + item.price}</span><span class="blurb${tooExp ? ' too-exp' : ''}">${teamLocked ? item.team + ' only' : tooExp ? 'Too expensive' : item.blurb}</span>`;
       if (!owned && afford && !teamLocked) {
         card.addEventListener('click', () => { if (cbBuy(item.id)) buildBuyMenu(state); });
       }

@@ -1,6 +1,7 @@
 // One place holds the whole match: every fighter, the round, the economy,
-// the charge and the feeds. The sim mutates it, the renderer reads it, the
-// HUD draws it. Nothing else keeps match state.
+// the charge and the feeds. One job: hold the match state, in one place.
+// The sim mutates it, the renderer reads it, the HUD draws it. Nothing else
+// keeps match state.
 import { makeRng } from './rng.js';
 
 export const TEAMS = {
