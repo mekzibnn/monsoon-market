@@ -41,5 +41,12 @@ export function createInput() {
 
 export function requestLock() {
   const el = document.body;
-  if (el.requestPointerLock) el.requestPointerLock();
+  if (el.requestPointerLock) {
+    // Newer Chrome returns a promise; swallow a denial (headless, iframe)
+    // instead of leaving an uncaught rejection in the console.
+    try {
+      const r = el.requestPointerLock();
+      if (r && r.catch) r.catch(() => {});
+    } catch (e) { /* pointer lock unavailable */ }
+  }
 }

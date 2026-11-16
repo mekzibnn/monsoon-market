@@ -13,8 +13,12 @@ import { WEAPONS } from './weapons.js';
 const params = new URLSearchParams(location.search);
 const seed = Number(params.get('seed') || '1');
 const shot = params.get('shot') || null;
+// Debug flag for headless play-tests: ?fast=1 shortens the buy phase and the
+// round clock so a full round can be observed in seconds.
+const FAST = params.get('fast') === '1';
 
 const state = createState(seed);
+if (FAST) { state.buyTime = 3; state.roundTime = 10; }
 state.staged = shot;
 const input = createInput();
 const renderer = new Renderer(document.getElementById('game'), state);
@@ -161,15 +165,24 @@ if (shot) stageShot(shot);
 // --- the loop ----------------------------------------------------------------
 let last = performance.now();
 let acc = 0;
+let hadLock = false;
 
 function frame(now) {
   requestAnimationFrame(frame);
   let dt = (now - last) / 1000;
   last = now;
   if (dt > 0.25) dt = 0.25;
+  if (input.locked) hadLock = true;
+  // Pause the sim when pointer lock is lost mid-round (Esc): the player
+  // should not be shot while reading the pause screen. The lock is only
+  // expected after the player has had it once, so the title screen and the
+  // buy phase before the first lock are not frozen.
+  const paused = !state.staged && hadLock && !input.locked
+    && (state.phase === 'live' || state.phase === 'buy')
+    && document.getElementById('title-screen').hidden;
   // Once a staged shot is ready the sim freezes, so the capture shows the
   // staged numbers instead of another half-second of bot fire.
-  if (!readySet) acc += dt;
+  if (!readySet && !paused) acc += dt;
 
   // Fixed steps.
   while (acc >= DT) {
@@ -214,10 +227,8 @@ function frame(now) {
     prevRound = state.round;
   }
 
-  // Pause when pointer lock is lost mid-round (real play only, never staged).
-  if (!state.staged && state.phase === 'live' && !input.locked && document.getElementById('title-screen').hidden) {
-    document.getElementById('pause').hidden = false;
-  }
+  // Show the pause screen while the sim is frozen for a lost lock.
+  document.getElementById('pause').hidden = !paused;
 
   renderer.sync(state, dt, state.time);
   updateHUD(state, input);
