@@ -235,13 +235,47 @@ function frame(now) {
 
   if (state.staged && !readySet && performance.now() - stageStartedAt > (state.readyDelay || 1) * 1000) {
     if (state.staged === 'combat') {
-      player(state).hp = 76; player(state).armour = 85;
-      // One live tracer in the frozen frame: the nearest HERON bot fires
-      // across the player's view as the capture is taken.
-      const sena = state.fighters.find((f) => f.name === 'Sena');
-      if (sena && sena.alive) {
-        state.lastShot = { from: sena, x: player(state).x, y: 1.2, z: player(state).z, at: state.time, hit: null, weapon: WEAPONS.monsoon, drawn: false };
+      // Restage the cover into an exact close-combat composition: whatever
+      // the bots did during the delay, snap them back into frame — three
+      // HERON enemies across the lane at 8-12 m, facing the player — and
+      // freeze the fight mid-burst. The sim is frozen from here, so the
+      // capture shows exactly this frame.
+      const p = player(state);
+      p.hp = 76; p.armour = 85;
+      const place = (name, x, z) => {
+        const f = state.fighters.find((f2) => f2.name === name);
+        if (!f) return null;
+        f.x = x; f.z = z; f.alive = true; f.hp = 250; f.vx = 0; f.vz = 0; f.moving = false;
+        f.yaw = Math.atan2(-(p.x - x), -(p.z - z));
+        if (f.bot) { f.bot.state = 'hold'; f.bot.target = null; }
+        return f;
+      };
+      const sena = place('Sena', 3.5, -0.5);
+      const oka = place('Oka', 7.5, 0.5);
+      place('Lila', 2, -4);
+      // Teammates and the fourth HERON sit behind the player, out of frame.
+      place('Taro', -5, 2); place('Nia', -8, 12); place('Bram', 8, 12); place('Dewi', 14, 14);
+      if (sena) {
+        // The player fires at Sena: viewmodel muzzle flash + tracer downrange.
+        state.lastShot = { from: p, x: sena.x, y: 1.3, z: sena.z, at: state.time, hit: null, weapon: WEAPONS.monsoon, drawn: false };
+        // Sena fires back across the player's view: enemy muzzle flash + tracer.
+        state.enemyFlash = { bot: sena, at: state.time };
+        renderer.spawnTracer({ x: sena.x, y: 1.5, z: sena.z }, { x: p.x, y: 1.2, z: p.z });
+        // Oka fires too: a second tracer crossing the frame.
+        if (oka) renderer.spawnTracer({ x: oka.x, y: 1.5, z: oka.z }, { x: p.x, y: 1.2, z: p.z });
       }
+      // Smoke drifting in the gap between the two right-hand enemies.
+      state.smokes.push({ x: 6, z: -1, until: state.time + 8 });
+      // Headline feeds: the player's headshot on top, three radio lines
+      // with roles. Pushed newest-last so they read top-first.
+      state.killfeed.length = 0;
+      pushKillfeed(state, 'Oka', 'HERON', 'Cicada SMG', 'Nia', false);
+      pushKillfeed(state, 'Sena', 'HERON', 'Monsoon AR', 'Taro', true);
+      pushKillfeed(state, 'You', 'OTTER', 'Monsoon AR', 'Lila', true);
+      state.radio.length = 0;
+      pushRadio(state, 'Bram', 'Sniper: eyes on the square — two crossing mid');
+      pushRadio(state, 'Nia', 'Support: holding Fish Pier — charge is ours');
+      pushRadio(state, 'Taro', 'Assault: contact at Spice Row, rotating');
     }
     readySet = true;
     window.__shotReady = true;

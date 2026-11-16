@@ -131,6 +131,8 @@ function botShoot(s, bot, target, dt) {
   const res = fireWeapon(s, bot, bot.yaw, 0, err);
   bot.weaponName = w.name;
   s.lastShot = { from: bot, x: res.x, y: res.y, z: res.z, at: s.time, hit: res.hit, weapon: w };
+  // Muzzle flash at the bot's gun (the renderer lights it for 60 ms).
+  s.enemyFlash = { bot, at: s.time };
   s.noise.push({ x: bot.x, z: bot.z, at: s.time });
   b.burstLeft -= 1;
   if (b.burstLeft <= 0) {

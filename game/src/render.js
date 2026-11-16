@@ -87,20 +87,21 @@ export class Renderer {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     container.appendChild(this.renderer.domElement);
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x352a3d);
-    this.scene.fog = new THREE.Fog(0x352a3d, 22, 68);
+    this.scene.background = new THREE.Color(0x41302c);
+    this.scene.fog = new THREE.Fog(0x41302c, 22, 68);
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.08, 120);
     this.camera.rotation.order = 'YXZ';
 
-    // Dusk light: a warm low sun and a cool sky fill.
-    this.scene.add(new THREE.HemisphereLight(0x8a7bb0, 0x3a2a22, 0.85));
-    const sun = new THREE.DirectionalLight(0xffb36b, 1.1);
+    // Dusk light: a warm low sun and a warm sky fill, brightened so the
+    // scene reads at thumbnail size.
+    this.scene.add(new THREE.HemisphereLight(0xb59a78, 0x4a3226, 1.05));
+    const sun = new THREE.DirectionalLight(0xffb36b, 1.6);
     sun.position.set(-18, 26, -14);
     this.scene.add(sun);
     // A few real lantern lights; the rest of the lanterns only glow.
     this.lanternLights = [];
     for (const p of [{ x: 0, z: 0 }, { x: 14, z: -9 }, { x: -14, z: -9 }, { x: 0, z: 14 }]) {
-      const l = new THREE.PointLight(0xffa64d, 18, 16, 1.6);
+      const l = new THREE.PointLight(0xffa64d, 22, 16, 1.6);
       l.position.set(p.x, 3.1, p.z);
       this.scene.add(l);
       this.lanternLights.push(l);
@@ -222,7 +223,7 @@ export class Renderer {
         new THREE.MeshBasicMaterial({ color: 0xffb347 }),
       );
       lamp.position.y = 3.1; g.add(lamp);
-      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffa64d, transparent: true, opacity: 0.55, depthWrite: false }));
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffa64d, transparent: true, opacity: 0.7, depthWrite: false }));
       halo.scale.set(2.2, 2.2, 1); halo.position.y = 3.1; g.add(halo);
       g.position.set(ln.x, 0, ln.z);
       s.add(g);
@@ -367,8 +368,15 @@ export class Renderer {
     }
     const gun = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.1, 0.7), dark);
     gun.position.set(0.1, 1.18, -0.35); g.add(gun);
+    // Muzzle flash: a glow at the gun tip, lit while the bot is firing
+    // (state.enemyFlash, set on every bot shot). The staged cover freezes
+    // it mid-burst; in live play it flickers for a frame per shot.
+    const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffd27a, transparent: true, opacity: 0, depthWrite: false }));
+    flash.scale.set(0.7, 0.7, 1);
+    flash.position.set(0.1, 1.18, -0.75);
+    g.add(flash);
     this.scene.add(g);
-    m = { group: g, head };
+    m = { group: g, head, flash };
     this.botMeshes.set(f.id, m);
     return m;
   }
@@ -391,7 +399,7 @@ export class Renderer {
     this.flashLight.intensity = on ? 14 : 0;
     // Water scroll, lantern flicker, rain fall.
     if (this.waterTex) this.waterTex.offset.y = (time * 0.02) % 1;
-    this.lanternLights.forEach((l, i) => { l.intensity = 17 + Math.sin(time * 7 + i * 2.4) * 1.5; });
+    this.lanternLights.forEach((l, i) => { l.intensity = 21 + Math.sin(time * 7 + i * 2.4) * 1.5; });
     const rp = this.rain.geometry.attributes.position.array;
     for (let i = 0; i < rp.length; i += 3) {
       rp[i + 1] -= dt * 11;
@@ -447,6 +455,10 @@ export class Renderer {
       }
       m.group.position.set(f.x, 0, f.z);
       m.group.rotation.set(0, f.yaw, 0);
+      // Enemy muzzle flash: on while this bot fired within the last 60 ms.
+      // In the frozen staged frame the clock stops, so the flash stays lit.
+      const ef = state.enemyFlash;
+      if (m.flash) m.flash.material.opacity = (ef && ef.bot === f && time - ef.at < 0.06) ? 0.95 : 0;
       // Walk swing on the legs is skipped: the group bobs instead.
       m.group.position.y = f.moving ? Math.abs(Math.sin(time * 8 + f.x)) * 0.05 : 0;
     }
@@ -456,11 +468,6 @@ export class Renderer {
       const from = state.lastShot.from;
       const eye = from.crouched ? CROUCH_EYE : EYE;
       this.spawnTracer({ x: from.x, y: eye, z: from.z }, { x: state.lastShot.x, y: state.lastShot.y, z: state.lastShot.z });
-      if (from !== p) {
-        // Enemy muzzle flash: a brief glow at the bot's gun.
-        const m = this.botMeshes.get(from.id);
-        if (m) m.head.material = m.head.material; // no-op keep
-      }
     }
     // New smoke clouds.
     for (const sm of state.smokes) {
