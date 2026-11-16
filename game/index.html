@@ -1,0 +1,250 @@
+<!doctype html>
+<!-- Monsoon Market: a round-based tactical FPS for make.fun's threejs-fps-02.
+     OTTER attacks, HERON defends. Two named sites (Spice Row, Fish Pier),
+     money between rounds, a buy menu, a charge to arm and defuse, and bots
+     that route, hold, listen and shoot back. Vanilla JS + three.js 0.187.0,
+     static files, no network, no build step. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monsoon Market — a three.js tactical FPS</title>
+<style>
+  :root {
+    --canvas: #17121c; --surface: rgba(22, 18, 28, 0.82); --hairline: rgba(233, 230, 223, 0.16);
+    --ink: #e9e6df; --muted: #a89fa8; --amber: #e8a13a; --teal: #35c4b5;
+    --red: #ff5a3a; --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-readout: ui-monospace, 'SF Mono', Menlo, monospace;
+    --xgap: 6px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--canvas); color: var(--ink); font-family: var(--font-ui); }
+  #game, #game canvas { position: fixed; inset: 0; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  #hud button { pointer-events: auto; }
+
+  /* Crosshair: four bars whose gap follows the weapon's spread. */
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 0; height: 0; }
+  #crosshair i { position: absolute; background: var(--ink); opacity: .9; }
+  #crosshair i:nth-child(1) { left: -1px; top: calc(-1 * var(--xgap) - 7px); width: 2px; height: 7px; }
+  #crosshair i:nth-child(2) { left: -1px; top: var(--xgap); width: 2px; height: 7px; }
+  #crosshair i:nth-child(3) { top: -1px; left: calc(-1 * var(--xgap) - 7px); height: 2px; width: 7px; }
+  #crosshair i:nth-child(4) { top: -1px; left: var(--xgap); height: 2px; width: 7px; }
+  #hitmarker { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; }
+  #hitmarker.on { opacity: 1; }
+  #hitmarker i { position: absolute; background: var(--amber); }
+  #hitmarker i:nth-child(1) { left: 12px; top: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(2) { left: 12px; bottom: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(3) { top: 12px; left: 0; height: 2px; width: 8px; }
+  #hitmarker i:nth-child(4) { top: 12px; right: 0; height: 2px; width: 8px; }
+  #damage { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 300ms; background: radial-gradient(ellipse at center, transparent 55%, rgba(255, 40, 20, 0.45) 100%); }
+  #damage.show { opacity: 1; }
+
+  .panel { background: var(--surface); border: 1px solid var(--hairline); border-radius: 4px; }
+
+  /* Top-left: minimap + zone name. */
+  #mapbox { position: fixed; left: 20px; top: 16px; }
+  #minimap { display: block; width: 150px; height: 150px; border-radius: 50%; border: 2px solid rgba(233, 230, 223, 0.25); background: rgba(20, 18, 26, 0.85); }
+  #zone-label { margin-top: 6px; text-align: center; font-size: 11px; letter-spacing: 0.14em; color: var(--amber); text-transform: uppercase; }
+
+  /* Top-centre: scores, timer, round. */
+  #topbar { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); display: flex; gap: 8px; align-items: stretch; }
+  #topbar .pill { padding: 6px 14px; display: flex; align-items: center; gap: 8px; font-family: var(--font-readout); }
+  #topbar .pill b { font-size: 22px; }
+  #topbar .pill .nm { font-size: 12px; letter-spacing: 0.1em; color: var(--muted); }
+  #score-otter { color: var(--teal); } #score-heron { color: var(--amber); }
+  .pips i { display: inline-block; width: 7px; height: 7px; margin-right: 2px; background: rgba(233, 230, 223, 0.2); border-radius: 1px; }
+  .pips i.on { background: var(--ink); }
+  #round-timer { font-size: 24px; font-weight: 700; }
+  #round-timer.fuse { color: var(--red); }
+  #round-label, #phase-label { display: block; font-size: 10px; letter-spacing: 0.12em; color: var(--muted); text-align: center; }
+
+  /* Top-right: kill feed. */
+  #killfeed { position: fixed; right: 20px; top: 16px; text-align: right; font-size: 13px; line-height: 1.7; }
+  #killfeed .w { color: var(--muted); font-size: 12px; }
+  #killfeed .hs { color: var(--amber); font-size: 11px; font-weight: 700; }
+
+  /* Radio callouts, bottom-centre. */
+  #radio { position: fixed; left: 50%; bottom: 128px; transform: translateX(-50%); text-align: center; font-size: 13px; }
+  #radio div { background: var(--surface); border: 1px solid var(--hairline); border-radius: 4px; padding: 5px 12px; margin-top: 4px; }
+  #radio b { color: var(--amber); }
+
+  /* Bottom-left: health, armour, cash. */
+  #stats { position: fixed; left: 20px; bottom: 20px; display: flex; gap: 8px; }
+  #stats .stat { padding: 8px 14px; min-width: 86px; }
+  #stats .stat span { display: block; font-size: 10px; letter-spacing: 0.14em; color: var(--muted); }
+  #stats .stat b { font-family: var(--font-readout); font-size: 26px; font-weight: 600; }
+  #stats .stat.low b { color: var(--red); }
+  #cash { color: var(--amber); }
+
+  /* Bottom-right: weapon, grenades, ammo. */
+  #weaponbox { position: fixed; right: 20px; bottom: 20px; text-align: right; }
+  #weapon-name { font-size: 12px; letter-spacing: 0.14em; color: var(--muted); }
+  #grenades { font-size: 12px; color: var(--muted); margin: 4px 0; }
+  #grenades span { margin-left: 10px; }
+  #grenades .charge { color: var(--red); font-weight: 700; }
+  #ammo { font-family: var(--font-readout); font-size: 44px; line-height: 1; }
+  #ammo.empty #ammo-mag { color: var(--amber); }
+  #ammo-reserve { font-size: 16px; color: var(--muted); }
+
+  /* Plant / defuse progress. */
+  #plant-bar { position: fixed; left: 50%; top: 58%; transform: translateX(-50%); width: 320px; text-align: center; }
+  #plant-bar[hidden] { display: none; }
+  #plant-label { font-size: 14px; margin-bottom: 6px; }
+  #plant-track { height: 8px; background: rgba(233, 230, 223, 0.2); border-radius: 4px; overflow: hidden; }
+  #plant-fill { height: 100%; width: 0; background: var(--amber); }
+  #plant-hint { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  #plant-hint b { color: var(--ink); border: 1px solid var(--hairline); border-radius: 3px; padding: 0 5px; }
+
+  /* Round banner. */
+  #banner { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); text-align: center; opacity: 0; transition: opacity 300ms; }
+  #banner.show { opacity: 1; }
+  #banner b { display: block; font-size: 30px; letter-spacing: 0.06em; text-shadow: 0 2px 12px rgba(0,0,0,0.7); }
+  #banner span { font-size: 13px; color: var(--muted); }
+
+  /* Buy menu. */
+  .overlay { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(12, 9, 16, 0.55); pointer-events: auto; }
+  .overlay[hidden] { display: none; }
+  #buy-panel { width: min(1060px, 94vw); padding: 22px 26px 18px; }
+  #buy-head { display: flex; align-items: baseline; justify-content: space-between; }
+  #buy-head h2 { margin: 0; font-size: 26px; letter-spacing: 0.18em; }
+  #buy-head h2 span { font-size: 13px; color: var(--muted); letter-spacing: 0.1em; margin-left: 10px; }
+  #buy-cash { font-family: var(--font-readout); font-size: 26px; color: var(--amber); }
+  #buy-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 16px; }
+  .buy-col h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.12em; color: var(--muted); }
+  .buy-col h3 span { color: var(--ink); border: 1px solid var(--hairline); border-radius: 3px; padding: 0 5px; margin-right: 6px; }
+  .buy-item { display: block; width: 100%; text-align: left; background: rgba(233, 230, 223, 0.06); border: 1px solid var(--hairline); border-radius: 4px; color: var(--ink); font: inherit; padding: 9px 10px; margin-bottom: 8px; cursor: pointer; }
+  .buy-item:hover { border-color: var(--amber); }
+  .buy-item.owned { border-color: var(--teal); }
+  .buy-item.poor { opacity: 0.55; cursor: default; }
+  .buy-item b { display: block; font-size: 14px; }
+  .buy-item .price { color: var(--amber); font-size: 13px; }
+  .buy-item.owned .price { color: var(--teal); }
+  .buy-item .blurb { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  #buy-foot { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  #buy-close { float: right; background: none; border: 1px solid var(--hairline); color: var(--ink); border-radius: 4px; padding: 6px 12px; cursor: pointer; font: inherit; }
+
+  /* Scoreboard. */
+  #sb-panel { width: min(680px, 94vw); padding: 28px 32px; text-align: center; }
+  #sb-title { margin: 0; font-size: 40px; letter-spacing: 0.2em; }
+  #sb-title.win { color: var(--teal); } #sb-title.lose { color: var(--red); }
+  #sb-sub { color: var(--muted); font-size: 13px; margin: 6px 0 18px; }
+  .sb-team { text-align: left; margin-bottom: 14px; }
+  .sb-team h3 { margin: 0 0 6px; font-size: 14px; letter-spacing: 0.12em; }
+  .sb-team h3 .sc { float: right; font-family: var(--font-readout); font-size: 18px; }
+  .sb-team table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .sb-team th { color: var(--muted); font-weight: 400; text-align: right; padding: 3px 8px; }
+  .sb-team th:first-child, .sb-team td:first-child { text-align: left; }
+  .sb-team td { text-align: right; padding: 4px 8px; font-family: var(--font-readout); border-top: 1px solid rgba(233, 230, 223, 0.08); }
+  .sb-team tr.you td { color: var(--amber); }
+  #restart-btn { margin-top: 6px; background: var(--amber); color: #17121c; border: none; border-radius: 6px; padding: 12px 22px; font: inherit; font-weight: 600; cursor: pointer; }
+
+  /* Title + pause. */
+  .title-panel { width: min(480px, 94vw); padding: 34px; text-align: left; }
+  .title-panel h1 { margin: 0 0 4px; font-size: 40px; letter-spacing: 0.04em; }
+  .title-panel h1 span { color: var(--amber); }
+  .title-panel .tag { color: var(--muted); margin: 0 0 18px; font-size: 15px; line-height: 1.5; }
+  #play-btn { background: var(--amber); color: #17121c; border: none; border-radius: 6px; padding: 13px 24px; font: inherit; font-weight: 600; cursor: pointer; }
+  .keys { margin: 22px 0 0; padding: 0; list-style: none; display: grid; gap: 7px; font-size: 13px; color: var(--muted); }
+  .keys kbd { min-width: 24px; padding: 2px 6px; border: 1px solid var(--hairline); border-radius: 4px; font-family: var(--font-readout); font-size: 12px; color: var(--ink); text-align: center; display: inline-block; }
+  #pause .title-panel { text-align: center; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud" aria-hidden="true">
+  <div id="damage"></div>
+  <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+
+  <div id="mapbox"><canvas id="minimap" width="150" height="150"></canvas><div id="zone-label">OTTER DOCKS</div></div>
+
+  <div id="topbar">
+    <div class="pill panel"><span class="nm">OTTER</span><span class="pips" id="pips-otter"></span><b id="score-otter">0</b></div>
+    <div class="pill panel"><div><div id="round-timer">1:40</div><span id="round-label">ROUND 1 OF 12</span><span id="phase-label">BUY</span></div></div>
+    <div class="pill panel"><b id="score-heron">0</b><span class="pips" id="pips-heron"></span><span class="nm">HERON</span></div>
+  </div>
+
+  <div id="killfeed"></div>
+  <div id="radio"></div>
+
+  <div id="stats">
+    <div class="stat panel"><span>HEALTH</span><b id="health">100</b></div>
+    <div class="stat panel"><span>ARMOUR</span><b id="armour">0</b></div>
+    <div class="stat panel"><span>CASH</span><b id="cash">$800</b></div>
+  </div>
+
+  <div id="weaponbox">
+    <div id="weapon-name">KRAIT P9</div>
+    <div id="grenades"></div>
+    <div id="ammo"><span id="ammo-mag">13</span><span id="ammo-reserve">/ 52</span></div>
+  </div>
+
+  <div id="plant-bar" hidden>
+    <div id="plant-label">Arming the charge</div>
+    <div id="plant-track"><div id="plant-fill"></div></div>
+    <div id="plant-hint">Hold <b>E</b> to arm the charge</div>
+  </div>
+
+  <div id="banner"><b></b><span></span></div>
+</div>
+
+<div id="buy-menu" class="overlay" hidden>
+  <section id="buy-panel" class="panel">
+    <div id="buy-head">
+      <h2>REQUISITION <span id="buy-timer">15 S LEFT</span></h2>
+      <div id="buy-cash">$800</div>
+    </div>
+    <div id="buy-grid"></div>
+    <div id="buy-foot">Buy time: <b>B</b> opens the requisition menu · <b>1–5</b> pick a slot · click an item to buy it</div>
+    <button id="buy-close" type="button">Close (B)</button>
+  </section>
+</div>
+
+<div id="scoreboard" class="overlay" hidden>
+  <section id="sb-panel" class="panel">
+    <h1 id="sb-title" class="win">VICTORY</h1>
+    <p id="sb-sub"></p>
+    <div class="sb-team"><h3 style="color:#35c4b5">OTTER · <span class="sc" id="sb-otter-score">0</span></h3>
+      <table><thead><tr><th>Player</th><th>K</th><th>A</th><th>D</th><th>HS</th><th>DMG</th><th>Cash</th></tr></thead><tbody id="sb-otters"></tbody></table></div>
+    <div class="sb-team"><h3 style="color:#e8a13a">HERON · <span class="sc" id="sb-heron-score">0</span></h3>
+      <table><thead><tr><th>Player</th><th>K</th><th>A</th><th>D</th><th>HS</th><th>DMG</th><th>Cash</th></tr></thead><tbody id="sb-herons"></tbody></table></div>
+    <button id="restart-btn" type="button">New match (Enter)</button>
+  </section>
+</div>
+
+<div id="title-screen" class="overlay">
+  <section class="panel title-panel">
+    <h1>MONSOON <span>MARKET</span></h1>
+    <p class="tag">A night market on stilts, rain on the awnings, lanterns over the
+    river. OTTER attacks — arm the charge at Spice Row or Fish Pier.
+    HERON holds the stalls. First to 7 rounds takes the market.</p>
+    <button id="play-btn" type="button">Click to play</button>
+    <ul class="keys">
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move &nbsp; <kbd>Mouse</kbd> Look</li>
+      <li><kbd>Click</kbd> Fire &nbsp; <kbd>R</kbd> Reload &nbsp; <kbd>Ctrl</kbd> Crouch</li>
+      <li><kbd>B</kbd> Buy menu &nbsp; <kbd>1</kbd>–<kbd>5</kbd> Weapons &amp; grenades</li>
+      <li><kbd>E</kbd> Hold to arm / defuse the charge &nbsp; <kbd>Esc</kbd> Pause</li>
+    </ul>
+  </section>
+</div>
+
+<div id="pause" class="overlay" hidden>
+  <section class="panel title-panel">
+    <h1>Paused</h1>
+    <p class="tag">The market waits. Click below to take your post back.</p>
+    <button id="resume-btn" type="button" style="background:var(--amber);color:#17121c;border:none;border-radius:6px;padding:13px 24px;font:inherit;font-weight:600;cursor:pointer">Resume</button>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js"
+  }
+}
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
